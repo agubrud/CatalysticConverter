@@ -159,10 +159,6 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
         custom_config = r'--psm 6 -c tessedit_char_whitelist=0123456789/:.-apmAPM_ '
         timestamp_text = pytesseract.image_to_string(laptime_thresholded, config=custom_config).strip()
 
-        #speed_gray = cv2.cvtColor(roi2, cv2.COLOR_BGR2GRAY)
-        #speed_resized = cv2.resize(speed_gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-        #speed_thresholded = cv2.threshold(speed_resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-        #speed_text = pytesseract.image_to_string(speed_thresholded, config=custom_config).strip()
         results = reader.readtext(roi2)
         for (bbox, text, prob) in results:
             if prob > 0.5 and len(results) == 1:
@@ -178,16 +174,6 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
                 start_lap = True
             minute_memory = int(minute)
 
-        #if speed_text == '':
-        #    results = reader.readtext(roi2)
-        #    for (bbox, text, prob) in results:
-        #        if prob > 0.5 and len(results) == 1:
-        ##            speed_text = text
-        #        else:
-        #            cv2.imwrite(f"/Users/agubrud/Coding/ApexSense/debug/speed_{frame_number}_{prob}.jpg", roi2)
-        #            speed_text = speed_memory
-        #    #cv2.imwrite(f"/Users/agubrud/Coding/ApexSense/debug/laptime_{frame_number}.jpg", roi3)
-
         print(f"{speed_memory}, {speed_text}")
         if start_lap and abs((float(speed_text) - float(speed_memory)) / float(speed_memory)) > 0.05:
  
@@ -195,10 +181,6 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
             speed_text = speed_memory            
 
         speed_memory = speed_text
-
-        #cv2.imwrite("/Users/agubrud/Coding/ApexSense/debug_speed.jpg", roi2)
-        #cv2.imwrite("/Users/agubrud/Coding/ApexSense/debug_laptime.jpg", roi3)
-
 
         circular_roi = cv2.bitwise_and(roi, roi, mask=mask)
 
@@ -216,10 +198,6 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
             frame_data.append(FrameData(cX, cY, frame_number))
 
         if start_lap:
-            #segment_gray = cv2.cvtColor(roi4, cv2.COLOR_BGR2GRAY)
-            #segment_resized = cv2.resize(segment_gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-            #segment_thresholded = cv2.threshold(segment_resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-            #segment_text = pytesseract.image_to_string(segment_thresholded, config=custom_config).strip()
             results = reader.readtext(roi4)
             for (bbox, text, prob) in results:
                 if prob > 0.5 and len(results) == 1:
@@ -228,10 +206,6 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
                     cv2.imwrite(f"/Users/agubrud/Coding/ApexSense/debug/segment_{frame_number}_{prob}_{segment_text}.jpg", roi4)
                     segment_text = "-1"
 
-            #delta_gray = cv2.cvtColor(roi5, cv2.COLOR_BGR2GRAY)
-            #delta_resized = cv2.resize(delta_gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-            #delta_thresholded = cv2.threshold(delta_resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-            #delta_text = pytesseract.image_to_string(delta_thresholded, config=custom_config).strip()
             results = reader.readtext(roi5)
             for (bbox, text, prob) in results:
                 if prob > 0.5 and len(results) == 1:
