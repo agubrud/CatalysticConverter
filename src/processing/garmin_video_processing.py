@@ -109,12 +109,19 @@ def get_video_frame_info(video_path: str) -> dict:
 
 
 def process_video(video_path: str, template_path: str) -> List[FrameData]:
-    def extract_text(reader, roi, data_type):
-        results = reader.readtext(roi, allowlist='0123456789:.')
+    def extract_text(reader, roi, data_type, allowlist='0123456789:.', debug=False):
+        results = reader.readtext(roi, allowlist=allowlist)
         retval = "-1"
         for (bbox, text, prob) in results:
-            if prob > 0.5 and len(results) == 1:
+            if prob > 0.2 and len(results) == 1:
                 retval = text
+
+        if retval == "-1":
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            resized = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            thresholded = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+            custom_config = f'--psm 6 -c tessedit_char_whitelist={allowlist}'
+            retval = pytesseract.image_to_string(thresholded, config=custom_config).strip()
 
         return retval
     def extract_gforce_data(gforce_roi, gforce_mask, frame_data):
@@ -152,6 +159,7 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
     cap = cv2.VideoCapture(video_path)
     start_lap = False
     minute_memory = 0
+    segment_memory = 0
     reader = easyocr.Reader(['en'])
 
     with open(csv_path, "w") as f:
@@ -174,7 +182,7 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
         gforce_roi = frame[start_y:end_y, start_x:end_x]
         speed_roi = frame[880:935, 90:225]
         timestamp_roi = frame[1000:end_y, 305:600]
-        segment_roi = frame[0:80, 1305:1380]
+        segment_roi = frame[0:80, 1295:1360]
         delta_roi = frame[1000:end_y, 1400:1520]
 
         speed_text = extract_text(reader, speed_roi, "speed")
@@ -186,14 +194,23 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
                 timestamp_text = "-1"
                 continue
             minute, sec, msec = components
-            if int(minute) == 0 and minute_memory > 0:
+            if int(minute) == 0 and minute_memory > 0 and start_lap:
+                break
+            elif int(minute) == 0 and minute_memory > 0:
                 start_lap = True
             minute_memory = int(minute)
 
         if start_lap:
             gforce_cX, gforce_cY = extract_gforce_data(gforce_roi, gforce_mask, frame_data)
-            segment_text = extract_text(reader, segment_roi, "segment")
-            delta_text = extract_text(reader, delta_roi, "delta")
+            segment_text = extract_text(reader, segment_roi, "segment", allowlist='0123456789', debug=True)
+            if segment_text != "-1" and int(segment_text) - segment_memory <= -9:
+                segment_roi = segment_roi = frame[0:80, 1275:1360]
+                segment_text = extract_text(reader, segment_roi, "segment", allowlist='0123456789', debug=True)
+                #segment_memory = int(segment_text)
+            elif segment_text == "-1":
+                segment_text = f"{segment_memory}"
+            segment_memory = int(segment_text)
+            delta_text = extract_text(reader, delta_roi, "delta", allowlist='0123456789+-.')
             
             with open(csv_path, "+a") as f:
                 f.write(f"{frame_number};{timestamp_text};{segment_text};{speed_text};{delta_text};{gforce_cX};{gforce_cY}\n")
@@ -221,33 +238,10 @@ def sanitize_csv_file(file_path: str):
                     box[1][j] = box[0][j]
             lines[i] = ";".join(box[1])
 
-        lines[i] = f"{lines[i]}\n"
+        lines[i] = f"{lines[i].strip()}\n"
 
     with open(file_path, 'w') as f:
         f.writelines(lines)
-
-def plot_data(csv_path: str):
-    # use matplotlib and pandas to create plots
-    import matplotlib.pyplot as plt
-    import pandas as pd
-
-    df = pd.read_csv(csv_path, sep=';')
-
-    # smooth the speed data
-    df['speed'] = df['speed'].rolling(window=10, center=True).mean()
-
-    # don't display the plot, only save it later
-    fig = plt.figure(figsize=(10, 6))
-    plt.plot(df['frame_number'], df['speed'], label='Speed (MPH)')
-    #plt.plot(df['frame_number'], df['gforce_cY'], label='G-Force Y')
-    plt.xlabel('Frame Number')
-    plt.ylabel('Speed (MPH)')
-    plt.title('Speed Data Over Time')
-    plt.legend()
-    #plt.show()
-    # save to a png
-    plt.savefig(f"{csv_path.replace('.csv', '')}.png")
-    plt.close(fig)
 
 def generate_gforce_mask(video_path: str, template_path: str) -> Dict[str, cv2.Mat]:
     template = cv2.imread(template_path, cv2.IMREAD_COLOR)
@@ -299,14 +293,13 @@ if __name__ == "__main__":
     num_frames, fps = get_video_frame_info(args.data_file_path)
     csv_path = f"{args.output_path}/{Path(args.data_file_path).parent.name}_{Path(args.data_file_path).stem}.csv"
     frame_data = process_video(args.data_file_path, args.template_path)
-    json_output = jsonify_results(num_frames, fps, frame_data) 
+    #json_output = jsonify_results(num_frames, fps, frame_data) 
     sanitize_csv_file(csv_path)
-    plot_data(csv_path)
 
-    generated_uuid = str(uuid.uuid4())
-    file_path = f"{args.output_path}/video_{generated_uuid}.json"
+    #generated_uuid = str(uuid.uuid4())
+    #file_path = f"{args.output_path}/video_{generated_uuid}.json"
     
-    with open(file_path, 'w') as f:
-        f.writelines(json_output)
+    #with open(file_path, 'w') as f:
+    #    f.writelines(json_output)
 
-    print(f"{file_path}")
+    #print(f"{file_path}")

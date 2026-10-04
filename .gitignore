@@ -9,4 +9,7 @@ out/
 packaging/
 
 .venv/
-results
+results/
+debug/
+
+input_files.yaml
