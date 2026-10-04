@@ -7,3 +7,5 @@ node_modules/
 # generated build output
 out/
 packaging/
+
+.venv/
