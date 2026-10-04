@@ -115,9 +115,7 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
         for (bbox, text, prob) in results:
             if prob > 0.5 and len(results) == 1:
                 retval = text
-            #else:
-                #cv2.imwrite(f"/Users/agubrud/Coding/ApexSense/debug/{data_type}_{frame_number}_{prob}_{speed_text}.jpg", roi2)
-                #speed_text = speed_memory
+
         return retval
     def extract_gforce_data(gforce_roi, gforce_mask, frame_data):
         gforce_circular_roi = cv2.bitwise_and(gforce_roi, gforce_roi, mask=gforce_mask)
@@ -154,7 +152,6 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
     cap = cv2.VideoCapture(video_path)
     start_lap = False
     minute_memory = 0
-    speed_memory = 1
     reader = easyocr.Reader(['en'])
 
     with open(f"{args.output_path}/{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "w") as f:
@@ -175,13 +172,13 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
         end_x = frame_width - OFFSET
 
         gforce_roi = frame[start_y:end_y, start_x:end_x]
-        roi2 = frame[880:935, 90:225]
-        roi3 = frame[1000:end_y, 305:600]
-        roi4 = frame[0:80, 1305:1380]
-        roi5 = frame[1000:end_y, 1400:1520]
+        speed_roi = frame[880:935, 90:225]
+        timestamp_roi = frame[1000:end_y, 305:600]
+        segment_roi = frame[0:80, 1305:1380]
+        delta_roi = frame[1000:end_y, 1400:1520]
 
-        speed_text = extract_text(reader, roi2, "speed")
-        timestamp_text = extract_text(reader, roi3, "timestamp")
+        speed_text = extract_text(reader, speed_roi, "speed")
+        timestamp_text = extract_text(reader, timestamp_roi, "timestamp")
 
         if timestamp_text != '' and timestamp_text != "-1":
             components = re.split(r'[-:.]', timestamp_text)
@@ -195,8 +192,8 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
 
         if start_lap:
             gforce_cX, gforce_cY = extract_gforce_data(gforce_roi, gforce_mask, frame_data)
-            segment_text = extract_text(reader, roi4, "segment")
-            delta_text = extract_text(reader, roi5, "delta")
+            segment_text = extract_text(reader, segment_roi, "segment")
+            delta_text = extract_text(reader, delta_roi, "delta")
             
             with open(f"{args.output_path}/{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "+a") as f:
                 f.write(f"{frame_number};{timestamp_text};{segment_text};{speed_text};{delta_text};{gforce_cX};{gforce_cY}\n")
