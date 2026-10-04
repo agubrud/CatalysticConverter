@@ -154,7 +154,7 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
     minute_memory = 0
     reader = easyocr.Reader(['en'])
 
-    with open(f"{args.output_path}/{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "w") as f:
+    with open(csv_path, "w") as f:
         f.write("frame_number;elapsed_time;segment;speed;delta;gforce_cX;gforce_cY\n")
     while True:
         ret, frame = cap.read()
@@ -195,12 +195,36 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
             segment_text = extract_text(reader, segment_roi, "segment")
             delta_text = extract_text(reader, delta_roi, "delta")
             
-            with open(f"{args.output_path}/{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "+a") as f:
+            with open(csv_path, "+a") as f:
                 f.write(f"{frame_number};{timestamp_text};{segment_text};{speed_text};{delta_text};{gforce_cX};{gforce_cY}\n")
             
     cap.release()
+
     return frame_data 
 
+def sanitize_csv_file(file_path: str):
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+
+    # Remove any empty lines
+    for i, line in enumerate(lines):
+        prevLine = lines[i-1] if i > 1 else ""
+        currLine = line
+        nextLine = lines[i+1] if i < len(lines) - 1 else ""
+
+        if prevLine != "" and currLine != "" and nextLine != "":
+            box = [prevLine.strip().split(';'), currLine.strip().split(';'), nextLine.strip().split(';')]
+            # for each row, look at the ith index and see if the currentLine is "-1".
+            # if it is, grab the value from the ith index in the prevLine 
+            for j in range(len(box[0])):
+                if box[1][j] == "-1":
+                    box[1][j] = box[0][j]
+            lines[i] = ";".join(box[1])
+
+        lines[i] = f"{lines[i]}\n"
+
+    with open(file_path, 'w') as f:
+        f.writelines(lines)
 
 def generate_gforce_mask(video_path: str, template_path: str) -> Dict[str, cv2.Mat]:
     template = cv2.imread(template_path, cv2.IMREAD_COLOR)
@@ -250,8 +274,10 @@ if __name__ == "__main__":
     args = process_cli_args()
 
     num_frames, fps = get_video_frame_info(args.data_file_path)
+    csv_path = f"{args.output_path}/{Path(args.data_file_path).parent.name}_{Path(args.data_file_path).stem}.csv"
     frame_data = process_video(args.data_file_path, args.template_path)
     json_output = jsonify_results(num_frames, fps, frame_data) 
+    sanitize_csv_file(csv_path)
 
     generated_uuid = str(uuid.uuid4())
     file_path = f"{args.output_path}/video_{generated_uuid}.json"
