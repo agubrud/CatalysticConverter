@@ -110,7 +110,7 @@ def get_video_frame_info(video_path: str) -> dict:
 
 def process_video(video_path: str, template_path: str) -> List[FrameData]:
     def extract_text(reader, roi, data_type):
-        results = reader.readtext(roi)
+        results = reader.readtext(roi, allowlist='0123456789:.')
         retval = "-1"
         for (bbox, text, prob) in results:
             if prob > 0.5 and len(results) == 1:
@@ -119,14 +119,30 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
                 #cv2.imwrite(f"/Users/agubrud/Coding/ApexSense/debug/{data_type}_{frame_number}_{prob}_{speed_text}.jpg", roi2)
                 #speed_text = speed_memory
         return retval
+    def extract_gforce_data(gforce_roi, gforce_mask, frame_data):
+        gforce_circular_roi = cv2.bitwise_and(gforce_roi, gforce_roi, mask=gforce_mask)
+        
+        gforce_hsv = cv2.cvtColor(gforce_circular_roi, cv2.COLOR_BGR2HSV)
+    
+        mask1 = cv2.inRange(gforce_hsv, lower_red_1, upper_red_1)
+        mask2 = cv2.inRange(gforce_hsv, lower_red_2, upper_red_2)
+        red_mask = mask1 + mask2
+
+        moments = cv2.moments(red_mask)
+        if moments['m00'] != 0:
+            # FIXME: cX and cY are with respect to the roi's pixel dimension.
+            cX = -int(moments['m10'] / moments['m00'])
+            cY = int(moments['m01'] / moments['m00'])
+            frame_data.append(FrameData(cX, cY, frame_number))
+        return cX, cY
 
     frame_data: List[FrameData] = []
     
-    mask_results = generate_gforce_mask(video_path, template_path)
-    roi = mask_results['roi']
-    mask = mask_results['mask']
+    gforce_mask_results = generate_gforce_mask(video_path, template_path)
+    gforce_roi = gforce_mask_results['roi']
+    gforce_mask = gforce_mask_results['mask']
 
-    roi_height, roi_width, _ = roi.shape
+    gforce_roi_height, gforce_roi_width, _ = gforce_roi.shape
 
     # HSV match red color - G-force meter shows a red dot moving based on gforces
     lower_red_1 = np.array([0, 70, 50])
@@ -141,8 +157,8 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
     speed_memory = 1
     reader = easyocr.Reader(['en'])
 
-    with open(f"{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "w") as f:
-        f.write("frame_number;elapsed_time;segment;speed;delta;cX;cY\n")
+    with open(f"{args.output_path}/{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "w") as f:
+        f.write("frame_number;elapsed_time;segment;speed;delta;gforce_cX;gforce_cY\n")
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -153,60 +169,37 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
         frame_height, frame_width, _ = frame.shape
 
         OFFSET = 25
-        start_y = frame_height - OFFSET - roi_height
+        start_y = frame_height - OFFSET - gforce_roi_height
         end_y = frame_height - OFFSET
-        start_x = frame_width - OFFSET - roi_width
+        start_x = frame_width - OFFSET - gforce_roi_width
         end_x = frame_width - OFFSET
 
-        roi = frame[start_y:end_y, start_x:end_x]
+        gforce_roi = frame[start_y:end_y, start_x:end_x]
         roi2 = frame[880:935, 90:225]
         roi3 = frame[1000:end_y, 305:600]
         roi4 = frame[0:80, 1305:1380]
         roi5 = frame[1000:end_y, 1400:1520]
 
-        laptime_gray = cv2.cvtColor(roi3, cv2.COLOR_BGR2GRAY)
-        laptime_resized = cv2.resize(laptime_gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-        laptime_thresholded = cv2.threshold(laptime_resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-        custom_config = r'--psm 6 -c tessedit_char_whitelist=0123456789/:.-apmAPM_ '
-        timestamp_text = pytesseract.image_to_string(laptime_thresholded, config=custom_config).strip()
+        speed_text = extract_text(reader, roi2, "speed")
+        timestamp_text = extract_text(reader, roi3, "timestamp")
 
-        speed_text = extract_text(reader, roi3, "speed")
-
-        if timestamp_text != '':
-            minute, sec_msec = result = re.split(r'[-:]', timestamp_text)
-            sec, msec = sec_msec.split('.')
+        if timestamp_text != '' and timestamp_text != "-1":
+            components = re.split(r'[-:.]', timestamp_text)
+            if len(components) != 3:
+                timestamp_text = "-1"
+                continue
+            minute, sec, msec = components
             if int(minute) == 0 and minute_memory > 0:
                 start_lap = True
             minute_memory = int(minute)
 
-        #print(f"{speed_memory}, {speed_text}")
-        #if start_lap and abs((float(speed_text) - float(speed_memory)) / float(speed_memory)) > 0.05:
-        #    cv2.imwrite(f"/Users/agubrud/Coding/ApexSense/debug/speed_{frame_number}_{speed_text}.jpg", roi2)
-        #    speed_text = speed_memory            
-
-        #speed_memory = speed_text
-
-        circular_roi = cv2.bitwise_and(roi, roi, mask=mask)
-
-        hsv = cv2.cvtColor(circular_roi, cv2.COLOR_BGR2HSV)
-    
-        mask1 = cv2.inRange(hsv, lower_red_1, upper_red_1)
-        mask2 = cv2.inRange(hsv, lower_red_2, upper_red_2)
-        red_mask = mask1 + mask2
-
-        moments = cv2.moments(red_mask)
-        if moments['m00'] != 0:
-            # FIXME: cX and cY are with respect to the roi's pixel dimension.
-            cX = -int(moments['m10'] / moments['m00'])
-            cY = int(moments['m01'] / moments['m00'])
-            frame_data.append(FrameData(cX, cY, frame_number))
-
         if start_lap:
+            gforce_cX, gforce_cY = extract_gforce_data(gforce_roi, gforce_mask, frame_data)
             segment_text = extract_text(reader, roi4, "segment")
             delta_text = extract_text(reader, roi5, "delta")
             
-            with open(f"{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "+a") as f:
-                f.write(f"{frame_number};{timestamp_text};{segment_text};{speed_text};{delta_text};{cX};{cY}\n")
+            with open(f"{args.output_path}/{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "+a") as f:
+                f.write(f"{frame_number};{timestamp_text};{segment_text};{speed_text};{delta_text};{gforce_cX};{gforce_cY}\n")
             
     cap.release()
     return frame_data 
