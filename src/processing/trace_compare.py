@@ -57,6 +57,7 @@ if __name__ == "__main__":
     plot_data(input_data, attribute="speed")
     plot_data(input_data, attribute="gforce_cX")
     plot_data(input_data, attribute="gforce_cY")
+    plot_data(input_data, attribute="gforce_cMag")
 
     num_segments = 0
     for file_name, file_info in input_data.items():
@@ -73,3 +74,4 @@ if __name__ == "__main__":
         plot_data(input_data, attribute="speed", segment_filter=segment)
         plot_data(input_data, attribute="gforce_cX", segment_filter=segment)
         plot_data(input_data, attribute="gforce_cY", segment_filter=segment)
+        plot_data(input_data, attribute="gforce_cMag", segment_filter=segment)

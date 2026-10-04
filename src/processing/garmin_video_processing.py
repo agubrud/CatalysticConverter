@@ -136,10 +136,11 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
         moments = cv2.moments(red_mask)
         if moments['m00'] != 0:
             # FIXME: cX and cY are with respect to the roi's pixel dimension.
-            cX = -int(moments['m10'] / moments['m00'])
-            cY = int(moments['m01'] / moments['m00'])
+            cX = int(moments['m10'] / moments['m00']) - int(gforce_roi_width / 2)
+            cY = int(gforce_roi_height / 2) - int(moments['m01'] / moments['m00'])
+            cMag = np.sqrt(cX**2 + cY**2)
             frame_data.append(FrameData(cX, cY, frame_number))
-        return cX, cY
+        return cX, cY, cMag
 
     frame_data: List[FrameData] = []
     
@@ -163,7 +164,7 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
     reader = easyocr.Reader(['en'])
 
     with open(csv_path, "w") as f:
-        f.write("frame_number;elapsed_time;segment;speed;delta;gforce_cX;gforce_cY\n")
+        f.write("frame_number;elapsed_time;segment;speed;delta;gforce_cX;gforce_cY;gforce_cMag\n")
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -201,7 +202,7 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
             minute_memory = int(minute)
 
         if start_lap:
-            gforce_cX, gforce_cY = extract_gforce_data(gforce_roi, gforce_mask, frame_data)
+            gforce_cX, gforce_cY, gforce_cMag = extract_gforce_data(gforce_roi, gforce_mask, frame_data)
             segment_text = extract_text(reader, segment_roi, "segment", allowlist='0123456789', debug=True)
             if segment_text != "-1" and int(segment_text) - segment_memory <= -9:
                 segment_roi = segment_roi = frame[0:80, 1275:1360]
@@ -213,7 +214,7 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
             delta_text = extract_text(reader, delta_roi, "delta", allowlist='0123456789+-.')
             
             with open(csv_path, "+a") as f:
-                f.write(f"{frame_number};{timestamp_text};{segment_text};{speed_text};{delta_text};{gforce_cX};{gforce_cY}\n")
+                f.write(f"{frame_number};{timestamp_text};{segment_text};{speed_text};{delta_text};{gforce_cX};{gforce_cY};{gforce_cMag}\n")
             
     cap.release()
 
