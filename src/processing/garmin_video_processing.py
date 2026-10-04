@@ -226,6 +226,29 @@ def sanitize_csv_file(file_path: str):
     with open(file_path, 'w') as f:
         f.writelines(lines)
 
+def plot_data(csv_path: str):
+    # use matplotlib and pandas to create plots
+    import matplotlib.pyplot as plt
+    import pandas as pd
+
+    df = pd.read_csv(csv_path, sep=';')
+
+    # smooth the speed data
+    df['speed'] = df['speed'].rolling(window=10, center=True).mean()
+
+    # don't display the plot, only save it later
+    fig = plt.figure(figsize=(10, 6))
+    plt.plot(df['frame_number'], df['speed'], label='Speed (MPH)')
+    #plt.plot(df['frame_number'], df['gforce_cY'], label='G-Force Y')
+    plt.xlabel('Frame Number')
+    plt.ylabel('Speed (MPH)')
+    plt.title('Speed Data Over Time')
+    plt.legend()
+    #plt.show()
+    # save to a png
+    plt.savefig(f"{csv_path.replace('.csv', '')}.png")
+    plt.close(fig)
+
 def generate_gforce_mask(video_path: str, template_path: str) -> Dict[str, cv2.Mat]:
     template = cv2.imread(template_path, cv2.IMREAD_COLOR)
     roi_height, roi_width, _ = template.shape
@@ -278,6 +301,7 @@ if __name__ == "__main__":
     frame_data = process_video(args.data_file_path, args.template_path)
     json_output = jsonify_results(num_frames, fps, frame_data) 
     sanitize_csv_file(csv_path)
+    plot_data(csv_path)
 
     generated_uuid = str(uuid.uuid4())
     file_path = f"{args.output_path}/video_{generated_uuid}.json"
