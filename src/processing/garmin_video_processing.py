@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
 import argparse
 import cv2
+import pytesseract
+import easyocr
+import re
 import json
 import numpy as np
 import os
+from pathlib import Path
 import sys
 import uuid
 from typing import Dict, List
+
+import os
+
+def clear_and_print(text):
+    # 'nt' is for Windows (uses 'cls'), others use 'clear'
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(text)
 
 #
 #   This generates pixel coordinates of the red marker within the g-force graph with respect to time (video frame number)
@@ -98,6 +109,17 @@ def get_video_frame_info(video_path: str) -> dict:
 
 
 def process_video(video_path: str, template_path: str) -> List[FrameData]:
+    def extract_text(reader, roi, data_type):
+        results = reader.readtext(roi)
+        retval = "-1"
+        for (bbox, text, prob) in results:
+            if prob > 0.5 and len(results) == 1:
+                retval = text
+            #else:
+                #cv2.imwrite(f"/Users/agubrud/Coding/ApexSense/debug/{data_type}_{frame_number}_{prob}_{speed_text}.jpg", roi2)
+                #speed_text = speed_memory
+        return retval
+
     frame_data: List[FrameData] = []
     
     mask_results = generate_gforce_mask(video_path, template_path)
@@ -114,13 +136,20 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
 
     frame_number = 0
     cap = cv2.VideoCapture(video_path)
+    start_lap = False
+    minute_memory = 0
+    speed_memory = 1
+    reader = easyocr.Reader(['en'])
 
+    with open(f"{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "w") as f:
+        f.write("frame_number;elapsed_time;segment;speed;delta;cX;cY\n")
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
         frame_number += 1
+        clear_and_print(f"processing frame {frame_number}")
         frame_height, frame_width, _ = frame.shape
 
         OFFSET = 25
@@ -130,6 +159,32 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
         end_x = frame_width - OFFSET
 
         roi = frame[start_y:end_y, start_x:end_x]
+        roi2 = frame[880:935, 90:225]
+        roi3 = frame[1000:end_y, 305:600]
+        roi4 = frame[0:80, 1305:1380]
+        roi5 = frame[1000:end_y, 1400:1520]
+
+        laptime_gray = cv2.cvtColor(roi3, cv2.COLOR_BGR2GRAY)
+        laptime_resized = cv2.resize(laptime_gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        laptime_thresholded = cv2.threshold(laptime_resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+        custom_config = r'--psm 6 -c tessedit_char_whitelist=0123456789/:.-apmAPM_ '
+        timestamp_text = pytesseract.image_to_string(laptime_thresholded, config=custom_config).strip()
+
+        speed_text = extract_text(reader, roi3, "speed")
+
+        if timestamp_text != '':
+            minute, sec_msec = result = re.split(r'[-:]', timestamp_text)
+            sec, msec = sec_msec.split('.')
+            if int(minute) == 0 and minute_memory > 0:
+                start_lap = True
+            minute_memory = int(minute)
+
+        #print(f"{speed_memory}, {speed_text}")
+        #if start_lap and abs((float(speed_text) - float(speed_memory)) / float(speed_memory)) > 0.05:
+        #    cv2.imwrite(f"/Users/agubrud/Coding/ApexSense/debug/speed_{frame_number}_{speed_text}.jpg", roi2)
+        #    speed_text = speed_memory            
+
+        #speed_memory = speed_text
 
         circular_roi = cv2.bitwise_and(roi, roi, mask=mask)
 
@@ -145,6 +200,13 @@ def process_video(video_path: str, template_path: str) -> List[FrameData]:
             cX = -int(moments['m10'] / moments['m00'])
             cY = int(moments['m01'] / moments['m00'])
             frame_data.append(FrameData(cX, cY, frame_number))
+
+        if start_lap:
+            segment_text = extract_text(reader, roi4, "segment")
+            delta_text = extract_text(reader, roi5, "delta")
+            
+            with open(f"{Path(video_path).parent.name}_{Path(video_path).stem}.csv", "+a") as f:
+                f.write(f"{frame_number};{timestamp_text};{segment_text};{speed_text};{delta_text};{cX};{cY}\n")
             
     cap.release()
     return frame_data 
